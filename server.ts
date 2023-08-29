@@ -1,14 +1,22 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import crypto = require('crypto');
 import bcrypt = require('bcrypt');
+
+// Define a custom interface that extends the default request interface
+interface CustomRequest extends Request {
+    user?: { username: string };
+}
 const app = express();
 const port = 5000;
-
+// Array of registered users
 const registeredUsers: any[] = [];
+// Array of logged in users
+const loggedInUsers: { username: string, token: string }[] = [];
+// Salt rounds
 const saltRounds = 10;
-const salt = bcrypt.genSaltSync(saltRounds);
+const salt = bcrypt.genSaltSync(saltRounds); // Generate a salt
 
 // Function to check if username or email already exist
 function checkIfUserExists(username: string, email: string) {
@@ -26,13 +34,39 @@ function checkIfUserExists(username: string, email: string) {
 
 app.use(cors()); // Enable CORS
 app.use(express.json()); // Parse JSON body
+app.use((req: CustomRequest, res: Response, next: Function) => {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (token) {
+        try {
+            // Verify the token
+            const decodedToken = jwt.verify(token, 'secretKey') as JwtPayload;
+            const loggedInUserIndex = loggedInUsers.findIndex(
+                user => user.username === decodedToken.username
+            );
+
+            if (loggedInUserIndex >= 0) {
+                // Token is still valid
+                req.user = decodedToken;
+                next();
+            } else {
+                // Token has expired
+                res.status(401).json({ result: 'Token has expired.'});
+            }
+    } catch (err) {
+        res.status(401).json({ result: 'Invalid token.'});
+    }
+    } else {
+        res.status(401).json({ result: 'No token provided.'}); 
+    }
+});
 
 // Endpoint for GET request
 app.get('/', (req: Request, res: Response) => {
     res.send(`test server! ${port} Users Data: ${JSON.stringify(registeredUsers)}`);
 });
 
-// Endpont for POST request
+// Endpont for POST registration
 app.post('/register', (req: Request, res: Response) => {
     const { username, password, email } = req.body;
     // Handle registration logic
@@ -47,32 +81,13 @@ app.post('/register', (req: Request, res: Response) => {
         return res.status(409).json({ error: conflict});
     }
 
-    // // Check email is already taken
-    // const existingEmail = registeredUsers.find(user => user.email === email);
-    // if(existingEmail){
-    //     return res.status(409).json({ error: 'Email already been registered.'});
-    // }
-    // // Check if username is already taken
-    // const existingUser = registeredUsers.find(user => user.username === username);
-    // if(existingUser){
-    //     return res.status(409).json({ error: 'Username already been taken.'});
-    // }
-
     // Create a user object with registration data
     const newUser = {
         username: username,
         hashedPassword: bcrypt.hashSync(password, salt),
         email: email,
-        secretKey: crypto.randomBytes(64).toString('hex'),
     };
 
-    // // Generate a secret key for JWT
-    // const secretKey: string = crypto.randomBytes(64).toString('hex');
-
-    // Create a JWT with expiration time in 1 hour
-    // const token = jwt.sign(newUser, secretKey, { expiresIn: '1h' });
-
-    // Add new user object to the array
     registeredUsers.push(newUser);
 
     res.status(201).json({ message: 'Registration successful!'});
@@ -81,26 +96,56 @@ app.post('/register', (req: Request, res: Response) => {
 // Endpoint for GET users endpoint
 app.get('/users', (req: Request, res: Response) => {
     res.json(registeredUsers);
-})
+});
 
-// Endpoint for POST login endpoint
-app.post('/login', (req: Request, res: Response) => {
+// Endpoint for POST login
+app.post('/login', (req: CustomRequest, res: Response) => {
     const { username, password } = req.body;
     const user = registeredUsers.find(user => user.username === username);
     if (!user) {
-        return res.status(401).json({ error: 'Invalid username or password.'});
+        return res.status(401).json({ result: 'No user found. Please sign up.'});
     }
-
-    const isPasswordValid = bcrypt.compareSync(password, user.hashedPassword);
-
-    if (!isPasswordValid) {
-        return res.status(401).json({ error: 'Invalid username or password.'});
-    }
-
-    const token = jwt.sign({ username: user.username }, user.secretKey, { expiresIn: '1h' });
     
-    res.status(200).json({ message:'Login successful' ,token });
-})
+    const isPasswordValid = bcrypt.compareSync(password, user.hashedPassword);
+    if (!isPasswordValid) {
+        return res.status(401).json({ result: 'Incorrect password.'});
+    }
+
+    const token = jwt.sign({ username: user.username }, 'secretKey', { expiresIn: '10s ' });
+
+    // Decode the token (without verification)
+    const decodedToken = jwt.decode(token) as { exp: number } | null;
+    
+    if (decodedToken) {
+        const expirationTime = decodedToken.exp * 1000;
+        
+        if (Date.now() > expirationTime) {
+            // Token has expired
+            console.log('Token has expired.');
+        } else {
+            // Token is still valid
+            console.log('Token is still valid.');
+        }
+    } else {
+        // Invalid token or unable to decode
+        console.log('Invalid token or unable to decode.');
+    }
+
+    res.status(200).json({ result:'Login successful' ,token });
+});
+
+// Endpoint for POST logout
+app.post('/logout', (req: CustomRequest, res: Response) => {
+    const { username } = req.user as { username: string };
+    const loggedInUserIndex = loggedInUsers.findIndex(user => user.username === username);
+
+    if (loggedInUserIndex >= 0) {
+        // Remove the user from the array
+        loggedInUsers.splice(loggedInUserIndex, 1);
+    }
+
+    res.status(200).json({ result:'Logout successful' });
+});
 
 app.listen(port, () => {
     console.log(`Server is runnning on port ${port}`);
