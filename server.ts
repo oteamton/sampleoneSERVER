@@ -32,34 +32,18 @@ function checkIfUserExists(username: string, email: string) {
     return null; // No conflicts
 }
 
+// Function to check if a token is valid and not expired
+function checkTokenValidity(token: string): boolean {
+    const decodedToken = jwt.decode(token) as { exp: number } | null;
+
+    if (decodedToken) {
+        const expirationTime = decodedToken.exp * 1000;
+        return Date.now() < expirationTime;
+    }
+    return false;
+}
 app.use(cors()); // Enable CORS
 app.use(express.json()); // Parse JSON body
-app.use((req: CustomRequest, res: Response, next: Function) => {
-    const token = req.headers.authorization?.split(' ')[1];
-
-    if (token) {
-        try {
-            // Verify the token
-            const decodedToken = jwt.verify(token, 'secretKey') as JwtPayload;
-            const loggedInUserIndex = loggedInUsers.findIndex(
-                user => user.username === decodedToken.username
-            );
-
-            if (loggedInUserIndex >= 0) {
-                // Token is still valid
-                req.user = decodedToken;
-                next();
-            } else {
-                // Token has expired
-                res.status(401).json({ result: 'Token has expired.'});
-            }
-    } catch (err) {
-        res.status(401).json({ result: 'Invalid token.'});
-    }
-    } else {
-        res.status(401).json({ result: 'No token provided.'}); 
-    }
-});
 
 // Endpoint for GET request
 app.get('/', (req: Request, res: Response) => {
@@ -90,7 +74,7 @@ app.post('/register', (req: Request, res: Response) => {
 
     registeredUsers.push(newUser);
 
-    res.status(201).json({ message: 'Registration successful!'});
+    res.status(201).json({ message: 'Registration successful!!!'});
 });
 
 // Endpoint for GET users endpoint
@@ -102,8 +86,13 @@ app.get('/users', (req: Request, res: Response) => {
 app.post('/login', (req: CustomRequest, res: Response) => {
     const { username, password } = req.body;
     const user = registeredUsers.find(user => user.username === username);
+
+    if ( !username || !password) {
+        return res.status(400).json({ result: 'Please provide username and password.'});
+    }
+
     if (!user) {
-        return res.status(401).json({ result: 'No user found. Please sign up.'});
+        return res.status(404).json({ result: 'No user found. Please sign up.'});
     }
     
     const isPasswordValid = bcrypt.compareSync(password, user.hashedPassword);
@@ -111,27 +100,57 @@ app.post('/login', (req: CustomRequest, res: Response) => {
         return res.status(401).json({ result: 'Incorrect password.'});
     }
 
-    const token = jwt.sign({ username: user.username }, 'secretKey', { expiresIn: '10s ' });
+    const token = jwt.sign({ username: user.username }, 'secretKey', { expiresIn: '10s' });
 
     // Decode the token (without verification)
     const decodedToken = jwt.decode(token) as { exp: number } | null;
     
     if (decodedToken) {
-        const expirationTime = decodedToken.exp * 1000;
+        const expirationTime = decodedToken.exp;
         
         if (Date.now() > expirationTime) {
             // Token has expired
             console.log('Token has expired.');
+            return res.status(401).json({ result: 'Token has expired.'});
         } else {
             // Token is still valid
             console.log('Token is still valid.');
+            const expDate = new Date(expirationTime);
+            return res.status(200).json({ result:'Login successful' ,token });
         }
     } else {
         // Invalid token or unable to decode
         console.log('Invalid token or unable to decode.');
     }
+});
 
-    res.status(200).json({ result:'Login successful' ,token });
+// Check for token
+app.use((req: CustomRequest, res: Response, next: Function) => {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (token) {
+        try {
+            // Verify the token
+            const decodedToken = jwt.verify(token, 'secretKey') as JwtPayload;
+            const username = decodedToken.sub as string;
+            const loggedInUserIndex = loggedInUsers.findIndex(
+                user => user.username === decodedToken.username
+            );
+
+            if (loggedInUserIndex >= 0) {
+                // Token is still valid
+                req.user = { username };
+                next();
+            } else {
+                // Token has expired
+                res.status(401).json({ result: 'Token has expired.'});
+            }
+    } catch (err) {
+        res.status(401).json({ result: 'Invalid token.'});
+    }
+    } else {
+        res.status(401).json({ result: 'No token provided.'}); 
+    }
 });
 
 // Endpoint for POST logout
