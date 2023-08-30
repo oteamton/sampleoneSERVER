@@ -21,12 +21,12 @@ const salt = bcrypt.genSaltSync(saltRounds); // Generate a salt
 // Function to check if username or email already exist
 function checkIfUserExists(username: string, email: string) {
 
-    if (registeredUsers.find(user => user.username === username)) {
-        return 'Username already been taken.';
-    }
-
     if (registeredUsers.find(user => user.email === email)) {
         return 'Email already been registered.';
+    }
+
+    if (registeredUsers.find(user => user.username === username)) {
+        return 'Username already been taken.';
     }
 
     return null; // No conflicts
@@ -74,7 +74,7 @@ app.post('/register', (req: Request, res: Response) => {
 
     registeredUsers.push(newUser);
 
-    res.status(201).json({ message: 'Registration successful!!!'});
+    res.status(201).json({ message: 'Registration success'});
 });
 
 // Endpoint for GET users endpoint
