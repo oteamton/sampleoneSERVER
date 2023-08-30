@@ -3,6 +3,7 @@ import cors from 'cors';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import crypto = require('crypto');
 import bcrypt = require('bcrypt');
+import nodemailer, { Transporter } from 'nodemailer';
 
 // Define a custom interface that extends the default request interface
 interface CustomRequest extends Request {
@@ -42,13 +43,62 @@ function checkTokenValidity(token: string): boolean {
     }
     return false;
 }
+
+// Create a transporter object
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'kitchanunt@g.swu.ac.th',
+        pass: 'Ton26052543'
+    }
+})
+
+// Function to send an authentication email
+function sendAuthEmail(username: string, email: string, activationToken: string) {
+    const mailOptions = {
+        from: '"Sample One Server" <kitchanunt@g.swu.ac.th>',
+        to: email,
+        subject: 'Authentication',
+        html: `<p>Hi ${username},</p>
+               <p>Click on the following link to verify your account: <a href="http://localhost:5000/activate/${activationToken}">Verify Account</a></p>`
+    }
+
+    transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+            console.log(error);
+        } else {
+            console.log('Email sent: ' + info.response);
+        }
+    });
+}
+
 app.use(cors()); // Enable CORS
 app.use(express.json()); // Parse JSON body
 
-// Endpoint for GET request
+// Access to array to see the data
 app.get('/', (req: Request, res: Response) => {
     res.send(`test server! ${port} Users Data: ${JSON.stringify(registeredUsers)}`);
 });
+
+// Verify token and store user
+app.get('/activate/:token', (req: Request, res: Response) => {
+    const activationToken = req.params.token;
+
+    // Verify token
+    try {
+        const decodedToken: any = jwt.verify(activationToken, registeredUsers[0].secretKey) as { username: string, };
+        const username = decodedToken.username;
+
+        // Store user
+        loggedInUsers.push({ username: username, token: activationToken });
+
+        // Send response
+        res.status(200).json({ message: 'Account activated successfully' });
+    } catch (error) {
+        res.status(400).send('Invalid or expired token');
+    
+}
+}); 
 
 // Endpont for POST registration
 app.post('/register', (req: Request, res: Response) => {
@@ -58,21 +108,32 @@ app.post('/register', (req: Request, res: Response) => {
     if (!username || !password || !email){
         return res.status(400).json({ error: 'All fields are required.'});
     }
-
+    
     // Check for conflicts
     const conflict = checkIfUserExists(username, email);
     if (conflict) {
         return res.status(409).json({ error: conflict});
     }
 
+    // Generate secret key
+    const secretKey = crypto.randomBytes(64).toString('hex');
+
+    // Generate a JWT token
+    const activationToken = jwt.sign({ username: username }, secretKey, { expiresIn: '30s' });
+
     // Create a user object with registration data
     const newUser = {
         username: username,
         hashedPassword: bcrypt.hashSync(password, salt),
         email: email,
+        activationToken: activationToken,
+        secretKey: secretKey
     };
-
+    // Add the user to the array
     registeredUsers.push(newUser);
+
+    // Send an authentication email
+    sendAuthEmail(username, email, activationToken);
 
     res.status(201).json({ message: 'Registration success'});
 });
