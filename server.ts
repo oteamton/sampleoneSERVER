@@ -77,7 +77,7 @@ app.use(express.json()); // Parse JSON body
 
 // Access to array to see the data
 app.get('/', (req: Request, res: Response) => {
-    res.send(`test server! ${port} Users Data: ${JSON.stringify(registeredUsers)}`);
+    res.send(`test server! ${port} Users Data: ${JSON.stringify(registeredUsers)} LoggedIn Users Data: ${JSON.stringify(loggedInUsers)}`);
 });
 
 // Verify token and store user
@@ -89,9 +89,14 @@ app.get('/activate/:token', (req: Request, res: Response) => {
         const decodedToken: any = jwt.verify(activationToken, registeredUsers[0].secretKey) as { username: string, };
         const username = decodedToken.username;
 
-        // Store user
-        loggedInUsers.push({ username: username, token: activationToken });
+        // Find user in registeredUsers array
+        const user = registeredUsers.find(user => user.username === username);
 
+        if (user) {
+            // Store user in loggedInUsers array
+            loggedInUsers.push(user);
+        }
+        
         // Send response
         res.status(200).json({ message: 'Account activated successfully' });
     } catch (error) {
@@ -119,7 +124,7 @@ app.post('/register', (req: Request, res: Response) => {
     const secretKey = crypto.randomBytes(64).toString('hex');
 
     // Generate a JWT token
-    const activationToken = jwt.sign({ username: username }, secretKey, { expiresIn: '30s' });
+    const activationToken = jwt.sign({ username: username }, secretKey, { expiresIn: '5m' });
 
     // Create a user object with registration data
     const newUser = {
@@ -149,70 +154,72 @@ app.post('/login', (req: CustomRequest, res: Response) => {
     const user = registeredUsers.find(user => user.username === username);
 
     if ( !username || !password) {
-        return res.status(400).json({ result: 'Please provide username and password.'});
+        return res.status(400).json({ error: 'Please fill in username and password.'});
     }
 
-    if (!user) {
-        return res.status(404).json({ result: 'No user found. Please sign up.'});
+    if ( !user ) {
+        return res.status(404).json({ error: 'No user found. Please sign up.'});
     }
     
     const isPasswordValid = bcrypt.compareSync(password, user.hashedPassword);
     if (!isPasswordValid) {
-        return res.status(401).json({ result: 'Incorrect password.'});
+        return res.status(401).json({ error: 'Incorrect password.'});
     }
 
-    const token = jwt.sign({ username: user.username }, 'secretKey', { expiresIn: '10s' });
+    return res.status(200).json({ result:'Login successful'});
+
+    // const token = jwt.sign({ username: user.username }, 'secretKey', { expiresIn: '10s' });
 
     // Decode the token (without verification)
-    const decodedToken = jwt.decode(token) as { exp: number } | null;
+    // const decodedToken = jwt.decode(token) as { exp: number } | null;
     
-    if (decodedToken) {
-        const expirationTime = decodedToken.exp;
+    // if (decodedToken) {
+    //     const expirationTime = decodedToken.exp;
         
-        if (Date.now() > expirationTime) {
-            // Token has expired
-            console.log('Token has expired.');
-            return res.status(401).json({ result: 'Token has expired.'});
-        } else {
-            // Token is still valid
-            console.log('Token is still valid.');
-            const expDate = new Date(expirationTime);
-            return res.status(200).json({ result:'Login successful' ,token });
-        }
-    } else {
-        // Invalid token or unable to decode
-        console.log('Invalid token or unable to decode.');
-    }
+    //     if (Date.now() > expirationTime) {
+    //         // Token has expired
+    //         console.log('Token has expired.');
+    //         return res.status(401).json({ result: 'Token has expired.'});
+    //     } else {
+    //         // Token is still valid
+    //         console.log('Token is still valid.');
+    //         const expDate = new Date(expirationTime);
+    //         return res.status(200).json({ result:'Login successful' ,token });
+    //     }
+    // } else {
+    //     // Invalid token or unable to decode
+    //     console.log('Invalid token or unable to decode.');
+    // }
 });
 
 // Check for token
-app.use((req: CustomRequest, res: Response, next: Function) => {
-    const token = req.headers.authorization?.split(' ')[1];
+// app.use((req: CustomRequest, res: Response, next: Function) => {
+//     const token = req.headers.authorization?.split(' ')[1];
 
-    if (token) {
-        try {
-            // Verify the token
-            const decodedToken = jwt.verify(token, 'secretKey') as JwtPayload;
-            const username = decodedToken.sub as string;
-            const loggedInUserIndex = loggedInUsers.findIndex(
-                user => user.username === decodedToken.username
-            );
+//     if (token) {
+//         try {
+//             // Verify the token
+//             const decodedToken = jwt.verify(token, 'secretKey') as JwtPayload;
+//             const username = decodedToken.sub as string;
+//             const loggedInUserIndex = loggedInUsers.findIndex(
+//                 user => user.username === decodedToken.username
+//             );
 
-            if (loggedInUserIndex >= 0) {
-                // Token is still valid
-                req.user = { username };
-                next();
-            } else {
-                // Token has expired
-                res.status(401).json({ result: 'Token has expired.'});
-            }
-    } catch (err) {
-        res.status(401).json({ result: 'Invalid token.'});
-    }
-    } else {
-        res.status(401).json({ result: 'No token provided.'}); 
-    }
-});
+//             if (loggedInUserIndex >= 0) {
+//                 // Token is still valid
+//                 req.user = { username };
+//                 next();
+//             } else {
+//                 // Token has expired
+//                 res.status(401).json({ result: 'Token has expired.'});
+//             }
+//     } catch (err) {
+//         res.status(401).json({ result: 'Invalid token.'});
+//     }
+//     } else {
+//         res.status(401).json({ result: 'No token provided.'}); 
+//     }
+// });
 
 // Endpoint for POST logout
 app.post('/logout', (req: CustomRequest, res: Response) => {
