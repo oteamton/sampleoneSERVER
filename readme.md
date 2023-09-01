@@ -8,6 +8,9 @@
 # Start as dev
     npx ts-node-dev server.ts
 
+# Start the server
+    ts-node server.ts
+
 # Install dependencies
     npm install lib 
     npm i --save-dev @types/lib
