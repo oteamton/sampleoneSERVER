@@ -48,8 +48,8 @@ function checkTokenValidity(token: string): boolean {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'kitchanunt@g.swu.ac.th',
-        pass: 'Ton26052543'
+        user: 'your_email',
+        pass: 'password'
     }
 })
 
@@ -94,7 +94,15 @@ app.get('/activate/:token', (req: Request, res: Response) => {
 
         if (user) {
             // Store user in loggedInUsers array
-            loggedInUsers.push(user);
+            const verifiedUser = {
+                username: user.username,
+                hasedPassword: user.hashedPassword,
+                token: user.activationToken
+            };
+            loggedInUsers.push(verifiedUser);
+        } else {
+            // User not found
+            return res.status(404).json({ error: 'User not found.' });
         }
         
         // Send response
@@ -151,17 +159,17 @@ app.get('/users', (req: Request, res: Response) => {
 // Endpoint for POST login
 app.post('/login', (req: CustomRequest, res: Response) => {
     const { username, password } = req.body;
-    const user = registeredUsers.find(user => user.username === username);
+    const verifiedUser = loggedInUsers.find(user => user.username === username);
 
     if ( !username || !password) {
         return res.status(400).json({ error: 'Please fill in username and password.'});
     }
 
-    if ( !user ) {
-        return res.status(404).json({ error: 'No user found. Please sign up.'});
+    if (!verifiedUser) {
+        return res.status(401).json({ error: 'User not found.' });
     }
     
-    const isPasswordValid = bcrypt.compareSync(password, user.hashedPassword);
+    const isPasswordValid = bcrypt.compareSync(password, registeredUsers[0].hashedPassword);
     if (!isPasswordValid) {
         return res.status(401).json({ error: 'Incorrect password.'});
     }
